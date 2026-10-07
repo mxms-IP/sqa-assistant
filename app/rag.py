@@ -1,7 +1,7 @@
 # rag.py
 
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
@@ -13,7 +13,7 @@ import pickle
 from pathlib import Path
 
 load_dotenv()
-INDEX_DIR = Path(__file__).resolve().parent.parent / "data" / "index"
+INDEX_DIR = Path(__file__).resolve().parent.parent/ "data" / "index"
 
 # ── STEP 1: Load and clean ────────────────────────────────────────────────────
 
@@ -33,6 +33,7 @@ def load_and_clean(pdf_path):
     pages = loader.load()
     for page in pages:
         page.page_content = clean_text(page.page_content)
+        print(page.page_content)
     print(f"[load] Loaded {len(pages)} pages from {pdf_path}")
     return pages
 
@@ -48,6 +49,7 @@ def chunk_pages(pages):
         separators=["\n\n", "\n", ". ", "? ", "! ", " ", ""]
     )
     chunks = splitter.split_documents(pages)
+   
     print(f"[chunk] Created {len(chunks)} chunks")
     return chunks
 
@@ -147,7 +149,7 @@ Answer (2-3 sentences, context only):"""
 
 # ── STEP 7: Ask the LLM ───────────────────────────────────────────────────────
 
-def ask_llm(prompt, model_name="gemini-2.5-flash"):
+def ask_llm(prompt, model_name="gemini-3.5-flash-lite"):
     client = genai.Client()
     
     response = client.models.generate_content(

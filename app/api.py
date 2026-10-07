@@ -6,21 +6,20 @@ from pydantic import BaseModel
 from typing import List
 import sys
 import os
-sys.path.append(os.path.dirname(__file__))
-import app.src.rag as rag  
+import app.rag as rag  
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi.responses import FileResponse
 
+sys.path.append(os.path.dirname(__file__))
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-PDF_PATH = str(BASE_DIR / "data" / "sample.pdf")
 UPLOAD_DIR = BASE_DIR / "data" / "uploads"  
 
 # create pipeline dictionary to store model, chunks and embeddings
 pipeline = {}
 chunks_list=[]
 
-#purpose: use of --reload with uvicorn starts two process watcher and worker, they cause running the rag pipeline twice that is unnecessary
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] Loading embedding model...")
@@ -55,11 +54,11 @@ class AskResponse(BaseModel):
     answer: str
     metadata: list
 
-@app.get("/home")
+@app.get("/api/home")
 def home():
-    return FileResponse(str(BASE_DIR / "src" / "frontend" / "index.html"))
+    return FileResponse(str(BASE_DIR / "public" /"index.html"))
 
-@app.post("/ask", response_model=AskResponse)
+@app.post("/api/ask", response_model=AskResponse)
 def ask(request: AskRequest):
     retrieved = rag.retrieve(request.question, pipeline["embed_model"], pipeline["index"], pipeline["chunks"])
     if not retrieved:
@@ -77,11 +76,11 @@ def ask(request: AskRequest):
 
     return AskResponse(answer=answer,metadata=sources)
 
-@app.post("/upload")
+@app.post("/api/upload")
 async def upload(files: List[UploadFile] = File(...)):
     # 1. Only accept PDFs
     for file in files:
-        if not file.filename.endswith(".pdf"):
+        if not file.filename.endswith((".pdf", ".md")):
             raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
     
         # 2. Save the file to data/uploads/
