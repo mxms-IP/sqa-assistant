@@ -1,0 +1,11 @@
+
+
+import numpy as np
+
+
+retreived={'text': 'Actual result:\nThe chatbot icon was visible on the search results page. Clicking it opened the chatbot with no product context loaded, returning a "no product selected" error.\nRelated PRD requirement: Technical Requirement 1\nRelated test case: TC-001\nNotes: Fix confirmed in build v0.9.1. Icon now correctly gated behind product page navigation. Regression test passed.',
+            'distance': np.float32(0.5627542), 
+            'confidence': 'HIGH', 
+            'metadata': {'source': 'F:\\sqa\\document-qa-assistant\\data\\uploads\\BUG-001.pdf', 'dl_meta': {'schema_name': 'docling_core.transforms.chunker.DocMeta', 'version': '1.0.0', 'doc_items': [{'self_ref': '#/texts/17', 'parent': {'$ref': '#/body'}, 'children': [], 'content_layer': 'body', 'label': 'text', 'prov': [{'page_no': 1, 'bbox': {'l': 33.0, 't': 182.52494000000002, 'r': 357.324, 'b': 141.010916, 'coord_origin': 'BOTTOMLEFT'},'charspan': [0, 160]}]}, {'self_ref': '#/texts/18', 'parent': {'$ref': '#/groups/2'}, 'children': [], 'content_layer': 'body', 'label': 'text', 'prov': [{'page_no': 1, 'bbox': {'l': 33.0, 't': 131.92489999999998, 'r': 294.62400000000014, 'b': 116.72289999999998, 'coord_origin': 'BOTTOMLEFT'}, 'charspan': [0, 48]}]}, {'self_ref': '#/texts/19', 'parent': {'$ref': '#/groups/2'}, 'children': [], 'content_layer': 'body', 'label': 'text', 'prov': [{'page_no': 1, 'bbox': {'l': 33.0, 't': 118.72489999999999, 'r': 166.26500000000004, 'b': 103.52289999999999, 'coord_origin': 'BOTTOMLEFT'}, 'charspan': [0, 25]}]}, {'self_ref': '#/texts/20', 'parent': {'$ref': '#/body'}, 'children': [], 'content_layer': 'body', 'label': 'text', 'prov': [{'page_no': 1, 'bbox': {'l': 33.0, 't': 94.5249, 'r': 368.63199999999995, 'b': 66.21088800000007, 'coord_origin': 'BOTTOMLEFT'}, 'charspan': [0, 118]}]}], 'headings': ['Actual result:'], 'origin': {'mimetype': 'application/pdf', 'binary_hash': 416702207271953047, 'filename': 'BUG-001.pdf'}}}}
+
+print(retreived['metadata']['dl_meta']['doc_items'][0]['prov'][0]['page_no'])

@@ -1,0 +1,5 @@
+1. Startup takes too much time (meanwhile the pages shows not found error), it includes loading llm model for embedding, then it loads pipeline if it exits. 
+suggestion: should show page and then loading sign for loading llm, or even load llm when needed (check once it is loaded in session no need to load it again).
+2. If no folder for storage exists, application crashes.
+3. System does not know metadata of file, does not explicity tell you what is the file about.
+4. Most of times gives (do not know answer), even if answer is clearly mentioned.

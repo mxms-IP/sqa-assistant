@@ -63,8 +63,13 @@ def load_embed_model():
 
 def build_embeddings_from_model(chunks, model):
     """Embed chunks using a pre-loaded model."""
-    texts = [chunk.page_content for chunk in chunks]
-    embeddings = model.encode(texts, show_progress_bar=True)
+    texts = []
+    for chunk in chunks:
+        source = chunk.metadata.get("source", "")
+        doc_title = Path(source).stem  
+        texts.append(f"{doc_title}\n{chunk.page_content}")
+    print(f"[debug] Sample embed text:\n{texts[3]}\n---")
+    embeddings = model.encode(texts, show_progress_bar=True,normalize_embeddings=True)
     print(f"[embed] Shape: {embeddings.shape}")
     return embeddings
 
@@ -105,7 +110,7 @@ def load_pipeline():
 
 def retrieve(question, embed_model, index, chunks, k=3):
     """Find the k most relevant chunks for a question."""
-    q_vector = embed_model.encode([question]).astype("float32")
+    q_vector = embed_model.encode([question],normalize_embeddings=True).astype("float32")
     distances, indices_found = index.search(q_vector, k=k)
 
     results = []
@@ -123,6 +128,9 @@ def retrieve(question, embed_model, index, chunks, k=3):
 
         results.append({"text": text, "distance": dist, "confidence": confidence, "metadata": metadata})
 
+    print("-----------------------Results------------------------------")
+    for result in results:
+        print(result)
 
     filtered = [r for r in results if r["confidence"] != "LOW"]
 
