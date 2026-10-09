@@ -11,7 +11,8 @@ from google import genai
 from dotenv import load_dotenv
 import pickle
 from pathlib import Path
-
+import os
+os.environ["HF_HOME"] = "G:/HuggingFace"
 load_dotenv()
 INDEX_DIR = Path(__file__).resolve().parent.parent/ "data" / "index"
 
@@ -55,7 +56,7 @@ def chunk_pages(pages):
 
 def load_embed_model():
     """Load the embedding model. Call this once and reuse."""
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("BAAI/bge-small-en-v1.5")
     print("[embed] Model loaded.")
     return model
 
@@ -68,7 +69,7 @@ def build_embeddings_from_model(chunks, model):
         source = chunk.metadata.get("source", "")
         doc_title = Path(source).stem  
         texts.append(f"{doc_title}\n{chunk.page_content}")
-    print(f"[debug] Sample embed text:\n{texts[3]}\n---")
+    
     embeddings = model.encode(texts, show_progress_bar=True,normalize_embeddings=True)
     print(f"[embed] Shape: {embeddings.shape}")
     return embeddings
