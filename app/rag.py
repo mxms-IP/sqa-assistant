@@ -12,9 +12,16 @@ from dotenv import load_dotenv
 import pickle
 from pathlib import Path
 import os
-os.environ["HF_HOME"] = "G:/HuggingFace"
+
+
+
 load_dotenv()
 INDEX_DIR = Path(__file__).resolve().parent.parent/ "data" / "index"
+INDEX_DIR.mkdir(parents=True, exist_ok=True)
+HF_CACHE = Path(__file__).resolve().parent.parent / "data" / "hf_cache"
+HF_CACHE.mkdir(parents=True, exist_ok=True)
+os.environ["HF_HOME"] = str(HF_CACHE)
+
 
 # ── STEP 1: Load and clean ────────────────────────────────────────────────────
 
