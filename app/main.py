@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 import app.rag as rag
 from app.api import router as api_router 
-from app.state import pipeline, UPLOAD_DIR, BASE_DIR
+from app.state import pipeline, UPLOAD_DIR, BASE_DIR, CHROMA_DIR
 
 sys.path.append(os.path.dirname(__file__))
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,13 +39,9 @@ app.include_router(api_router)
 def load_assistant():
     print("[startup] Loading embedding model...")
     pipeline["embed_model"] = rag.load_embed_model()
-        
-    index, chunks = rag.load_pipeline()
-    if index is not None:
-            pipeline["index"] = index
-            pipeline["chunks"] = chunks
-            print("[startup] Pipeline restored from disk.")
-        
+
+    pipeline["collection"] = rag.get_chroma_collection(str(CHROMA_DIR))
+
     print("[startup] Ready.")
     pipeline["ready"] = True
 

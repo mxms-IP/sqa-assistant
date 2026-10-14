@@ -3,6 +3,7 @@ import os
 import faiss
 import requests
 import pickle
+import chromadb
 import numpy as np
 from google import genai
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from app.state import HF_CACHE,INDEX_DIR
 
 load_dotenv()
 os.environ["HF_HOME"] = str(HF_CACHE)
+
 
 
 # Load and parse using docling (layout-aware) 
@@ -44,75 +46,85 @@ def load_embed_model():
     print("[embed] Model loaded.")
     return model
 
-
-def build_embeddings_from_model(chunks, model):
-    """Embed chunks using a pre-loaded model."""
+def add_chunks_to_chroma(chunks, embed_model, collection):
     texts = []
-    for chunk in chunks:
+    ids = []
+    metadatas = []
+
+    for i, chunk in enumerate(chunks):
         source = chunk.metadata.get("source", "")
-        doc_title = Path(source).stem  
-        texts.append(f"{doc_title}\n{chunk.page_content}")
-    
-    embeddings = model.encode(texts, show_progress_bar=True,normalize_embeddings=True)
-    print(f"[embed] Shape: {embeddings.shape}")
-    return embeddings
+        doc_title = Path(source).stem
+        text = f"{doc_title}\n{chunk.page_content}"
+        texts.append(text)
+        ids.append(f"{doc_title}_chunk_{i}")
+
+        #because docling does not provide flatten metadata
+        raw = chunk.metadata
+        dl_meta = raw.get("dl_meta", {})
+        doc_items = dl_meta.get("doc_items", [{}])
+        first_prov = doc_items[0].get("prov", [{}])[0] if doc_items else {}
+
+        metadatas.append({
+            "source": raw.get("source", ""),
+            "page_no": first_prov.get("page_no", -1),
+            "doc_title": doc_title
+        })
+
+    embeddings = embed_model.encode(
+        texts,
+        show_progress_bar=True,
+        normalize_embeddings=True
+    ).tolist()
+
+    collection.add(
+        ids=ids,
+        documents=texts,
+        embeddings=embeddings,
+        metadatas=metadatas
+    )
+
+    print(f"[chroma] Added {len(texts)} chunks to collection")
 
 
-def build_index(embeddings):
-    """Store embeddings in a FAISS index for fast search."""
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
-    index.add(embeddings.astype("float32"))
-    print(f"[index] Stored {index.ntotal} vectors")
-    return index
+def get_chroma_collection(chroma_dir: str):
+    client = chromadb.PersistentClient(path=chroma_dir)
+    collection = client.get_or_create_collection(
+        name="sqa_documents",
+        metadata={"hnsw:space": "cosine"}
+    )
+    return collection
 
+def retrieve(question, embed_model, collection, k=3):
+    q_vector = embed_model.encode(
+        [question],
+        normalize_embeddings=True
+    ).tolist()
 
-def save_pipeline(index, chunks):
-    """Save FAISS index and chunks to disk."""
-    faiss.write_index(index, str(INDEX_DIR / "index.faiss"))
-    with open(INDEX_DIR / "chunks.pkl", "wb") as f:
-        pickle.dump(chunks, f)
-    print("[Save] Saved index and chunks to disk.")
+    results = collection.query(
+        query_embeddings=q_vector,
+        n_results=k,
+        include=["documents", "metadatas", "distances"]
+    )
 
-
-def load_pipeline():
-    """Load FAISS index and chunks from disk if they exist."""
-    index_path = INDEX_DIR / "index.faiss"
-    chunks_path = INDEX_DIR / "chunks.pkl"
-    
-    if index_path.exists() and chunks_path.exists():
-        index = faiss.read_index(str(index_path))
-        with open(chunks_path, "rb") as f:
-            chunks = pickle.load(f)
-        print(f"[Save] Loaded {len(chunks)} chunks from disk.")
-        return index, chunks
-    
-    print("[Save] No saved pipeline found. Starting fresh.")
-    return None, []
-
-
-def retrieve(question, embed_model, index, chunks, k=3):
-    """Find the k most relevant chunks for a question."""
-    q_vector = embed_model.encode([question],normalize_embeddings=True).astype("float32")
-    distances, indices_found = index.search(q_vector, k=k)
-
-    results = []
-    for rank, idx in enumerate(indices_found[0]):
-        dist = distances[0][rank]
-        text = chunks[idx].page_content
-        metadata = chunks[idx].metadata
-
-        if dist < 0.8:
+    formatted = []
+    for i in range(len(results["ids"][0])):
+        distance = results["distances"][0][i]
+        
+        if distance < 0.2:
             confidence = "HIGH"
-        elif dist < 1.2:
+        elif distance < 0.5:
             confidence = "MEDIUM"
         else:
             confidence = "LOW"
 
-        results.append({"text": text, "distance": dist, "confidence": confidence, "metadata": metadata})
+        formatted.append({
+            "text": results["documents"][0][i],
+            "distance": distance,
+            "confidence": confidence,
+            "metadata": results["metadatas"][0][i]
+        })
 
-    filtered = [r for r in results if r["confidence"] != "LOW"]
-
+    filtered = [r for r in formatted if r["confidence"] != "LOW"]
     return filtered if filtered else []
 
 

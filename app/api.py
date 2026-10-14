@@ -14,7 +14,7 @@ router= APIRouter()
 
 @router.post("/api/ask", response_model=AskResponse)
 def ask(request: AskRequest):
-    retrieved = rag.retrieve(request.question, pipeline["embed_model"], pipeline["index"], pipeline["chunks"])
+    retrieved = rag.retrieve(request.question, pipeline["embed_model"], pipeline["collection"])
     if not retrieved:
         return AskResponse(answer="Insufficient context, the documents do not contain enough relevant information to answer this question.", metadata=[])
     
@@ -23,7 +23,7 @@ def ask(request: AskRequest):
     sources = [
         {
             "source": os.path.basename(r["metadata"]["source"]),
-            "page": r['metadata']['dl_meta']['doc_items'][0]['prov'][0]['page_no']
+            "page": r['metadata']['page_no']
         }
         for r in retrieved
     ]
@@ -47,15 +47,9 @@ async def upload(files: List[UploadFile] = File(...)):
         print(f"[upload] Saved {file.filename}")
         
         chunks = rag.load_and_chunk(str(save_path))
-        chunks_list.extend(chunks)
+
+        rag.add_chunks_to_chroma(chunks, pipeline["embed_model"], pipeline["collection"])
         
     
-    embeddings = rag.build_embeddings_from_model(chunks_list, pipeline["embed_model"])
-    new_index = rag.build_index(embeddings)
-
-    # 4. Replace the active index — now /ask searches the new document
-    pipeline["index"] = new_index
-    pipeline["chunks"] = chunks_list
-    rag.save_pipeline(new_index, chunks_list)
 
     return {"message": "Files successfully uploaded", "filenames": [f.filename for f in files] , "chunks": len(chunks_list)}

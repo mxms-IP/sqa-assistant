@@ -13,3 +13,6 @@ app/data/uploads/
 *.pkl
 *.faiss
 *.pdf
+
+
+data/chroma/
