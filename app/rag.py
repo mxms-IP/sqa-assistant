@@ -1,65 +1,42 @@
 # rag.py
-
+import os
+import faiss
+import requests
+import pickle
+import numpy as np
+from google import genai
+from dotenv import load_dotenv
+from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
-import requests
-import re
-from google import genai
-from dotenv import load_dotenv
-import pickle
-from pathlib import Path
-import os
-
+from langchain_docling import DoclingLoader
+from langchain_docling.loader import ExportType
+from docling.chunking import HybridChunker
+from app.state import HF_CACHE,INDEX_DIR
 
 
 load_dotenv()
-INDEX_DIR = Path(__file__).resolve().parent.parent/ "data" / "index"
-INDEX_DIR.mkdir(parents=True, exist_ok=True)
-HF_CACHE = Path(__file__).resolve().parent.parent / "data" / "hf_cache"
-HF_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ["HF_HOME"] = str(HF_CACHE)
 
 
-# ── STEP 1: Load and clean ────────────────────────────────────────────────────
-
-def clean_text(text):
-    """Fix OCR artifacts from scanned PDFs."""
-    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
-    text = re.sub(r'\bth\s+(at|ose|e|eir|ere)\b', r'th\1', text)
-    text = re.sub(r'(?<=[a-z])\s+\.\s+(?=[a-z])', ', ', text)
-    text = re.sub(r'\s+\.\s+', '. ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-
-def load_and_clean(pdf_path):
-    """Load a PDF and return cleaned pages."""
-    loader = PyPDFLoader(pdf_path)
-    pages = loader.load()
-    for page in pages:
-        page.page_content = clean_text(page.page_content)
-        print(page.page_content)
-    print(f"[load] Loaded {len(pages)} pages from {pdf_path}")
-    return pages
-
-
-# ── STEP 2: Chunk ─────────────────────────────────────────────────────────────
-
-def chunk_pages(pages):
-    """Split pages into overlapping chunks."""
-    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        model_name="gpt-3.5-turbo",
-        chunk_size=150,
-        chunk_overlap=30,
-        separators=["\n\n", "\n", ". ", "? ", "! ", " ", ""]
+# Load and parse using docling (layout-aware) 
+def load_and_chunk(filepath: str):
+    """
+    Load and parse the file using docling (layout-aware). 
+    Docling does the parsing and returns .md file when loading.
+    Then, docling's native HybridChunker creates chunks.
+    """
+    loader= DoclingLoader(
+        file_path=filepath,
+        export_type=ExportType.DOC_CHUNKS,
+        chunker=HybridChunker(tokenizer="BAAI/bge-small-en-v1.5")
     )
-    chunks = splitter.split_documents(pages)
-   
-    print(f"[chunk] Created {len(chunks)} chunks")
+
+    chunks = loader.load()
+    print(f"[chunk] Created {len(chunks)} layout-aware chunks")
     return chunks
+
 
 def load_embed_model():
     """Load the embedding model. Call this once and reuse."""
@@ -67,7 +44,6 @@ def load_embed_model():
     print("[embed] Model loaded.")
     return model
 
-# ── STEP 3: Embed ─────────────────────────────────────────────────────────────
 
 def build_embeddings_from_model(chunks, model):
     """Embed chunks using a pre-loaded model."""
@@ -82,8 +58,6 @@ def build_embeddings_from_model(chunks, model):
     return embeddings
 
 
-# ── STEP 4: Index ─────────────────────────────────────────────────────────────
-
 def build_index(embeddings):
     """Store embeddings in a FAISS index for fast search."""
     dimension = embeddings.shape[1]
@@ -92,12 +66,14 @@ def build_index(embeddings):
     print(f"[index] Stored {index.ntotal} vectors")
     return index
 
+
 def save_pipeline(index, chunks):
     """Save FAISS index and chunks to disk."""
     faiss.write_index(index, str(INDEX_DIR / "index.faiss"))
     with open(INDEX_DIR / "chunks.pkl", "wb") as f:
         pickle.dump(chunks, f)
     print("[Save] Saved index and chunks to disk.")
+
 
 def load_pipeline():
     """Load FAISS index and chunks from disk if they exist."""
@@ -114,7 +90,6 @@ def load_pipeline():
     print("[Save] No saved pipeline found. Starting fresh.")
     return None, []
 
-# ── STEP 5: Retrieve ──────────────────────────────────────────────────────────
 
 def retrieve(question, embed_model, index, chunks, k=3):
     """Find the k most relevant chunks for a question."""
@@ -136,16 +111,10 @@ def retrieve(question, embed_model, index, chunks, k=3):
 
         results.append({"text": text, "distance": dist, "confidence": confidence, "metadata": metadata})
 
-    print("-----------------------Results------------------------------")
-    for result in results:
-        print(result)
-
     filtered = [r for r in results if r["confidence"] != "LOW"]
 
     return filtered if filtered else []
 
-
-# ── STEP 6: Build prompt ──────────────────────────────────────────────────────
 
 def build_prompt(question, retrieved):
     """Assemble the context + question into a prompt string."""
@@ -162,8 +131,6 @@ Question: {question}
 Answer (2-3 sentences, context only):"""
     return prompt
 
-
-# ── STEP 7: Ask the LLM ───────────────────────────────────────────────────────
 
 def ask_llm(prompt, model_name="gemini-3.5-flash-lite"):
     client = genai.Client()
