@@ -1,6 +1,5 @@
 # rag.py
 import os
-import faiss
 import requests
 import pickle
 import chromadb

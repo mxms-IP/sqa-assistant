@@ -1,58 +1,95 @@
----
-title: SQA Assistant
-emoji: 📄
-colorFrom: green
-colorTo: blue
-sdk: docker
-pinned: false
----
-
-
 # SQA Assistant
 
-> A retrieval-augmented generation (RAG) application for software quality assurance professionals. Upload your test plans, defect reports, and requirements specs — then ask questions in plain English.
+A RAG application for software quality assurance professionals.
+Upload test plans, defect reports, and requirements specs — ask questions
+in plain English, get answers with source citations.
 
-**[Live Demo](https://mxms-ip.github.io/document-qa-assistant/)** 
+Built to solve one real problem: SQA teams spend hours searching through
+PDFs manually. This assistant retrieves the right passage, tells you which
+document and page it came from, and refuses to answer when the context
+is not there.
 
-<img width="1440" height="773" alt="image" src="https://github.com/user-attachments/assets/7f35f5d9-904f-41c8-9956-988e494f8876" />
+
+
+![SQA Assistant Screenshot](assets/image.png)
 
 ---
 
 ## What it does
 
-SQA professionals spend hours searching through PDFs for answers — "which test cases cover the login module?", "what's the severity of this known defect?", "does our test plan address performance requirements?". This assistant answers those questions instantly, with citations.
+SQA professionals spend hours searching through PDFs for answers:
+"which test cases cover the login module?", "what is the severity of
+this known defect?", "does our test plan address performance requirements?".
+This assistant answers those questions instantly, with citations.
 
 Upload multiple documents. Ask anything. Get answers with exact source and page number.
 
----git ls-files
+---
 
 ## How it works
 
 ```
-PDF documents
-     │
-     ▼
-OCR cleanup + chunking (150 tokens, 30 overlap)
-     │
-     ▼
-Sentence embeddings (all-MiniLM-L6-v2)
-     │
-     ▼
-FAISS vector index (IndexFlatL2)
-     │
-  question ──► embed question ──► similarity search
-                                        │
-                                        ▼
-                              top-k chunks + confidence score
-                                        │
-                                        ▼
-                              prompt with strict context rules
-                                        │
-                                        ▼
-                                   LLM answer + source citations
+PDF upload
+     |
+     v
+Docling -- layout-aware parsing (headings, tables, sections preserved)
+     |
+     v
+HybridChunker -- structure-aware chunks with bge tokenizer
+     |
+     v
+BAAI/bge-small-en-v1.5 -- normalized embeddings
+(document title prepended to each chunk before embedding)
+     |
+     v
+ChromaDB -- persistent vector store (cosine similarity)
+     |
+  question
+     |
+     v
+same bge model embeds the question
+     |
+     v
+cosine distance search -> top 3 chunks
+     |
+     v
+confidence filter -- LOW confidence dropped
+(distance < 0.2 = HIGH, < 0.5 = MEDIUM, else dropped)
+     |
+     v
+title stripped -> clean context fed to Gemini
+     |
+     v
+answer + source filename + page number
 ```
 
-The LLM is **instructed to refuse** answering from outside the uploaded documents. If the context doesn't contain the answer, it says so — no hallucination.
+The LLM is instructed to refuse answering outside the uploaded context.
+If confidence is too low, the system returns "insufficient context"
+rather than hallucinate.
+
+---
+
+## From 40% to 80% -- What Actually Changed
+
+Early builds answered roughly 40% of queries correctly.
+The rest hit the confidence floor and returned "insufficient context"
+even when the answer was sitting in the document.
+
+Two decisions moved the needle:
+
+**1. PyPDF to Docling (40% to 55%)**
+PyPDF treats every PDF as a flat stream of text. Docling understands
+layout -- headings, tables, and sections stay intact. SQA documents are
+structure-heavy, so this mattered immediately.
+
+**2. all-MiniLM to BAAI/bge-small-en-v1.5 (55% to 80%)**
+BGE is trained specifically for retrieval tasks with normalized embeddings.
+The cosine distances became meaningfully tighter on relevant chunks,
+which meant fewer false negatives at the confidence threshold.
+
+*Accuracy measured informally -- percentage of test queries returning a
+grounded answer across roughly 30 manual queries during development.
+Not a formal eval.*
 
 ---
 
@@ -60,12 +97,12 @@ The LLM is **instructed to refuse** answering from outside the uploaded document
 
 | Layer | Technology | Why |
 |---|---|---|
-| Embedding | `sentence-transformers/all-MiniLM-L6-v2` | Fast, local, no API cost |
-| Vector search | FAISS `IndexFlatL2` | In-memory, zero infrastructure |
-| PDF loading | LangChain `PyPDFLoader` | Metadata (filename, page) attached automatically |
-| Chunking | `RecursiveCharacterTextSplitter` with tiktoken | Semantic boundaries, token-aware overlap |
-| API | FastAPI + Pydantic | Auto-validation, auto-docs at `/docs` |
-| LLM | Google Gemini Flash | Fast, free tier, no local GPU needed |
+| PDF parsing | Docling | Layout-aware -- preserves headings, tables, and sections |
+| Chunking | Docling HybridChunker | Structure-aware chunks, not arbitrary token splits |
+| Embedding | BAAI/bge-small-en-v1.5 | Trained for retrieval, normalized cosine embeddings |
+| Vector store | ChromaDB | Persistent across uploads, no rebuild on restart |
+| API | FastAPI + Pydantic | Auto-validation, interactive docs at `/docs` |
+| LLM | Gemini Flash | Free tier, no GPU -- LLM role here is synthesis not retrieval |
 | Frontend | Vanilla HTML/CSS/JS | Zero dependencies, instant load |
 
 ---
@@ -73,15 +110,20 @@ The LLM is **instructed to refuse** answering from outside the uploaded document
 ## Project structure
 
 ```
-sqa-assistant/
-├── src/
-│   ├── rag.py              # Full RAG pipeline — load, chunk, embed, index, retrieve, prompt
-│   ├── api.py              # FastAPI — /ask and /upload endpoints
-│   └── frontend/
-│       └── index.html      # Single-file UI — upload panel, chat interface, source citations
+document-qa-assistant/
+├── app/
+│   ├── api.py          # FastAPI -- /api/ask and /api/upload endpoints
+│   ├── main.py         # App entry point, lifespan, CORS, model loading
+│   ├── models.py       # Pydantic request and response schemas
+│   ├── rag.py          # Full RAG pipeline -- parse, chunk, embed, retrieve, prompt
+│   ├── state.py        # Shared pipeline state and directory paths
+│   └── __init__.py
 ├── data/
-│   ├── sample.pdf          # Example document for testing
-│   └── uploads/            # Uploaded documents stored here
+│   ├── sample/         # Sample SQA documents for testing
+│   └── uploads/        # Uploaded documents stored here
+├── public/
+│   └── index.html      # Single-file UI -- upload panel, chat, source citations
+├── tests/
 ├── requirements.txt
 └── README.md
 ```
@@ -93,12 +135,12 @@ sqa-assistant/
 ### Prerequisites
 
 - Python 3.10+
-- Gemini API key — free at [aistudio.google.com](https://aistudio.google.com)
+- Gemini API key -- free at [aistudio.google.com](https://aistudio.google.com)
 
 ### Install
 
 ```bash
-git clone https://github.com/yourusername/sqa-assistant.git
+git clone https://github.com/mxms-IP/sqa-assistant.git
 cd sqa-assistant
 
 python -m venv .venv
@@ -118,43 +160,32 @@ GEMINI_API_KEY=your_key_here
 ### Run
 
 ```bash
-uvicorn app.src.api:app --reload
+uvicorn app.main:app --reload
 ```
 
 Open `http://localhost:8000/home` in your browser.
-
-API docs available at `http://localhost:8000/docs`.
+Interactive API docs at `http://localhost:8000/docs`.
 
 ---
 
-## API reference
+## API
 
-### `POST /upload`
+### `POST /api/upload`
 
-Upload one or more PDF documents. Builds a FAISS index across all files.
+Upload one or more PDF files. Parses, chunks, embeds, and stores in ChromaDB.
 
 ```bash
-curl -X POST http://localhost:8000/upload \
+curl -X POST http://localhost:8000/api/upload \
   -F "files=@testplan.pdf" \
   -F "files=@defects.pdf"
 ```
 
-Response:
-```json
-{
-  "documents": [
-    { "filename": "testplan.pdf", "chunks": 43 },
-    { "filename": "defects.pdf",  "chunks": 21 }
-  ]
-}
-```
+### `POST /api/ask`
 
-### `POST /ask`
-
-Ask a question against the indexed documents.
+Ask a question against all indexed documents.
 
 ```bash
-curl -X POST http://localhost:8000/ask \
+curl -X POST http://localhost:8000/api/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "Which test cases cover the authentication module?"}'
 ```
@@ -164,21 +195,15 @@ Response:
 {
   "answer": "Test cases TC-014 through TC-019 cover the authentication module...",
   "metadata": [
-    { "source": "testplan.pdf", "page": 4 },
-    { "source": "testplan.pdf", "page": 7 }
+    { "source": "testplan.pdf", "page": 4 }
   ]
 }
 ```
 
+Full schema available at `/docs`.
+
 ---
-
-## Docker
-
-```bash
-docker-compose up
-```
-
 
 ## Author
 
-**[mxms-IP]**
+**[mxms-IP](https://github.com/mxms-IP)**
