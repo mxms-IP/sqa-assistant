@@ -1,5 +1,5 @@
 .env
-.qa_venv/
+.venv/
 .ipynb_checkpoints/
 **/__pycache__/
 
