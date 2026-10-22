@@ -1,7 +1,7 @@
 # SQA Assistant
 
 A RAG application for software quality assurance professionals.
-Upload test plans, defect reports, and requirements specs — ask questions
+Upload test plans, defect reports, and requirements specs, then ask questions
 in plain English, get answers with source citations.
 
 Built to solve one real problem: SQA teams spend hours searching through
